@@ -1,0 +1,37 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Compilar ejecutable
+        run: npx pkg server.js --targets node18-win-x64 --output cydens-print-server.exe
+
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Ultima version"
+          make_latest: true
+          files: |
+            cydens-print-server.exe
+            instalar.bat
+            desinstalar.bat
+            startup-launcher.vbs
+            update-runner.bat
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

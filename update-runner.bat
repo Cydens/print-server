@@ -1,13 +1,21 @@
 @echo off
-:: Este script es llamado por el servidor para actualizarse
-:: Espera 2 segundos para que el servidor responda al cliente primero
-timeout /t 2 /nobreak >nul
+:: Esperar a que el servidor responda al cliente antes de matarlo
+timeout /t 3 /nobreak >nul
 
-cd /d "%~dp0\.."
-git pull origin main
+set INSTALL_DIR=%~dp0
 
-cd print-server
-call npm install
+echo Descargando nueva version...
+powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://github.com/Cydens/print-server/releases/latest/download/cydens-print-server.exe' -OutFile '%INSTALL_DIR%cydens-print-server-new.exe' -UseBasicParsing"
 
-net stop "Cydens Print Server"
-net start "Cydens Print Server"
+if not exist "%INSTALL_DIR%cydens-print-server-new.exe" (
+    echo ERROR: No se pudo descargar la actualizacion.
+    exit /b 1
+)
+
+echo Reemplazando ejecutable...
+taskkill /f /im cydens-print-server.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
+move /y "%INSTALL_DIR%cydens-print-server-new.exe" "%INSTALL_DIR%cydens-print-server.exe"
+
+echo Reiniciando...
+start "" wscript.exe "%INSTALL_DIR%startup-launcher.vbs"

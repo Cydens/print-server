@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { execSync } = require("child_process");
+const { execSync, spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -11,6 +11,16 @@ app.use(express.json());
 
 const PRINTER_NAME = process.env.PRINTER_NAME || "80mm Series Printer";
 const PORT = process.env.PORT || 3001;
+
+// Cuando corre como .exe compilado con pkg, EXEC_DIR es el directorio real
+// donde está el .exe (para leer update-runner.bat en el mismo lugar).
+const IS_PKG = typeof process.pkg !== "undefined";
+const EXEC_DIR = IS_PKG ? path.dirname(process.execPath) : __dirname;
+
+// El PS1 se lee del virtual filesystem de pkg (o del disco en dev mode)
+// y se extrae a temp para que PowerShell pueda ejecutarlo.
+const PS1_PATH = path.join(os.tmpdir(), "cydens-print.ps1");
+fs.writeFileSync(PS1_PATH, fs.readFileSync(path.join(__dirname, "send-to-printer.ps1")));
 const LINE_WIDTH = 42;
 
 // ─── Comandos ESC/POS ─────────────────────────────────────────────────────────
@@ -61,7 +71,7 @@ function fmt(amount) {
 function sendToPrinter(buffer) {
   const tmpFile = path.join(os.tmpdir(), `ticket-${Date.now()}.bin`);
   fs.writeFileSync(tmpFile, buffer);
-  const script = path.join(__dirname, "send-to-printer.ps1");
+  const script = PS1_PATH;
   try {
     const out = execSync(
       `powershell -ExecutionPolicy Bypass -File "${script}" -PrinterName "${PRINTER_NAME}" -FilePath "${tmpFile}"`,
@@ -87,7 +97,7 @@ app.post("/update", (req, res) => {
     return res.status(401).json({ error: "No autorizado" });
   }
   res.json({ message: "Actualizando servidor..." });
-  const runner = path.join(__dirname, "update-runner.bat");
+  const runner = path.join(EXEC_DIR, "update-runner.bat");
   // Ejecutar en background para que el servidor pueda responder primero
   require("child_process").spawn("cmd.exe", ["/c", runner], {
     detached: true,

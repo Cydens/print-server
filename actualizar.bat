@@ -11,8 +11,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Ir a la raiz del repositorio (un nivel arriba de print-server)
-cd /d "%~dp0\.."
+cd /d "%~dp0"
 
 echo Deteniendo servicio...
 net stop "Cydens Print Server" >nul 2>&1
@@ -30,7 +29,6 @@ if %errorlevel% neq 0 (
 )
 
 echo Actualizando dependencias...
-cd print-server
 call npm install
 
 echo Iniciando servicio...
