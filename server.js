@@ -9,18 +9,28 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PRINTER_NAME = process.env.PRINTER_NAME || "80mm Series Printer";
 const PORT = process.env.PORT || 3001;
 
-// Cuando corre como .exe compilado con pkg, EXEC_DIR es el directorio real
-// donde está el .exe (para leer update-runner.bat en el mismo lugar).
+// EXEC_DIR: directorio real del .exe en produccion, o __dirname en desarrollo
 const IS_PKG = typeof process.pkg !== "undefined";
 const EXEC_DIR = IS_PKG ? path.dirname(process.execPath) : __dirname;
 
-// El PS1 se lee del virtual filesystem de pkg (o del disco en dev mode)
-// y se extrae a temp para que PowerShell pueda ejecutarlo.
+// Leer configuracion desde config.json (creado por instalar.bat)
+let PRINTER_NAME = process.env.PRINTER_NAME || "80mm Series Printer";
+try {
+  const configPath = path.join(EXEC_DIR, "config.json");
+  if (fs.existsSync(configPath)) {
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    if (config.printer) PRINTER_NAME = config.printer;
+  }
+} catch {
+  console.warn("[WARN] No se pudo leer config.json, usando impresora por defecto.");
+}
+
+// PS1 embebido en el exe via pkg assets, se extrae a temp al arrancar
 const PS1_PATH = path.join(os.tmpdir(), "cydens-print.ps1");
 fs.writeFileSync(PS1_PATH, fs.readFileSync(path.join(__dirname, "send-to-printer.ps1")));
+
 const LINE_WIDTH = 42;
 
 // ─── Comandos ESC/POS ─────────────────────────────────────────────────────────
