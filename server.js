@@ -6,8 +6,17 @@ const path = require("path");
 const os = require("os");
 
 const app = express();
-app.use(cors());
+app.use(cors({ allowedHeaders: ["Content-Type", "x-update-secret"] }));
 app.use(express.json());
+
+// Chrome Private Network Access: permite POST desde HTTPS a localhost
+app.options("*", (req, res) => {
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, x-update-secret");
+  res.header("Access-Control-Allow-Private-Network", "true");
+  res.sendStatus(204);
+});
 
 const PORT = process.env.PORT || 3001;
 
