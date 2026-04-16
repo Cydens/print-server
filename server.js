@@ -8,6 +8,7 @@ const os = require("os");
 const app = express();
 app.use(cors({ allowedHeaders: ["Content-Type", "x-update-secret"] }));
 app.use(express.json());
+app.use(express.raw({ type: "application/octet-stream", limit: "1mb" }));
 
 // Chrome Private Network Access: permite POST desde HTTPS a localhost
 app.options("*", (req, res) => {
@@ -39,52 +40,6 @@ try {
 // PS1 embebido en el exe via pkg assets, se extrae a temp al arrancar
 const PS1_PATH = path.join(os.tmpdir(), "cydens-print.ps1");
 fs.writeFileSync(PS1_PATH, fs.readFileSync(path.join(__dirname, "send-to-printer.ps1")));
-
-const LINE_WIDTH = 42;
-
-// ─── Comandos ESC/POS ─────────────────────────────────────────────────────────
-const ESC = "\x1b";
-const GS = "\x1d";
-
-const esc = {
-  init: () => buf(`${ESC}@`),
-  charset: () => buf(`${ESC}t\x02`), // PC850 - soporta acentos español
-  alignLeft: () => buf(`${ESC}a\x00`),
-  alignCenter: () => buf(`${ESC}a\x01`),
-  boldOn: () => buf(`${ESC}E\x01`),
-  boldOff: () => buf(`${ESC}E\x00`),
-  feed: (n = 1) => buf(`${ESC}d${String.fromCharCode(n)}`),
-  cut: () => buf(`${GS}V\x41\x00`),
-  text: (str) => Buffer.from(str + "\n", "latin1"),
-};
-
-function buf(str) {
-  return Buffer.from(str, "binary");
-}
-
-function line(char = "-") {
-  return esc.text(char.repeat(LINE_WIDTH));
-}
-
-// Fila con label a la izquierda y valor a la derecha
-function row(label, value) {
-  const v = String(value);
-  const maxLabel = LINE_WIDTH - v.length - 1;
-  const l = label.substring(0, maxLabel);
-  const spaces = LINE_WIDTH - l.length - v.length;
-  return esc.text(l + " ".repeat(Math.max(1, spaces)) + v);
-}
-
-// ─── Formato de precio ────────────────────────────────────────────────────────
-function fmt(amount) {
-  return (
-    "$ " +
-    Number(amount).toLocaleString("es-AR", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
 
 // ─── Enviar RAW a la impresora Windows via PowerShell ────────────────────────
 function sendToPrinter(buffer) {
@@ -125,102 +80,13 @@ app.post("/update", (req, res) => {
 });
 
 app.post("/print", (req, res) => {
-  const {
-    orderNumber,
-    fecha,
-    hora,
-    customer,
-    patient,
-    dentist,
-    products,
-    orderTotal,
-    ticketInfo,
-  } = req.body;
-
-  const parts = [];
-
-  const p = (...bufs) => parts.push(...bufs);
-
-  // Init
-  p(esc.init(), esc.charset());
-
-  // Encabezado
-  p(esc.alignCenter(), esc.boldOn());
-  p(esc.text(`ORDEN DE TRABAJO #${orderNumber}`));
-  p(esc.boldOff());
-  p(esc.text(`${fecha} - ${hora}`));
-  p(line());
-  p(esc.text("DOCUMENTO NO VALIDO COMO FACTURA"));
-  p(line());
-
-  // Cliente
-  p(esc.alignLeft(), esc.boldOn());
-  p(esc.text(customer.name.substring(0, LINE_WIDTH)));
-  p(esc.boldOff());
-  if (customer.address) p(esc.text(customer.address.substring(0, LINE_WIDTH)));
-  if (customer.city) p(esc.text(customer.city.substring(0, LINE_WIDTH)));
-  p(esc.text(`IVA: ${customer.iva}`));
-  p(line());
-
-  // Dentista y paciente
-  if (dentist) p(esc.text(`Odont: ${dentist.substring(0, LINE_WIDTH - 7)}`));
-  p(esc.text(`Paciente: ${patient.substring(0, LINE_WIDTH - 10)}`));
-  p(line());
-
-  // Productos
-  for (const product of products) {
-    const name =
-      product.name.length > LINE_WIDTH
-        ? product.name.substring(0, LINE_WIDTH - 3) + "..."
-        : product.name;
-    p(esc.boldOn(), esc.text(name), esc.boldOff());
-    p(row(`  ${product.quantity} x ${fmt(product.price)}`, fmt(product.total)));
+  const buffer = req.body;
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    return res.status(400).json({ success: false, error: "Cuerpo vacío o tipo incorrecto" });
   }
-
-  p(line("-"));
-
-  // Total
-  p(esc.boldOn());
-  p(row("TOTAL", fmt(orderTotal)));
-  p(esc.boldOff());
-
-  // Cuenta corriente (opcional)
-  if (ticketInfo) {
-    p(line());
-    p(esc.alignCenter(), esc.boldOn());
-    p(esc.text("CUENTA CORRIENTE"));
-    p(esc.boldOff(), esc.alignLeft());
-    p(line());
-
-    p(row("Saldo anterior", fmt(ticketInfo.lastBalance)));
-    p(row("Fact. del mes", fmt(ticketInfo.monthInvoices)));
-    p(row("Pagos del mes", fmt(ticketInfo.monthPayments)));
-    p(line());
-
-    p(esc.boldOn());
-    p(row("Saldo Cta.Cte.", fmt(ticketInfo.actualBalance)));
-    p(esc.boldOff());
-    p(row("OT entregadas", fmt(ticketInfo.monthInvoices)));
-    p(row("Este ticket", fmt(orderTotal)));
-    p(line());
-
-    p(esc.boldOn());
-    p(row("SALDO TOTAL", fmt(Number(ticketInfo.actualBalance) + orderTotal)));
-    p(esc.boldOff());
-  }
-
-  // Pie
-  p(line());
-  p(esc.alignCenter());
-  p(esc.text("Gracias por su confianza"));
-  p(esc.feed(3));
-  p(esc.cut());
-
-  const buffer = Buffer.concat(parts);
-
   try {
     sendToPrinter(buffer);
-    console.log(`[OK] Imprimido orden #${orderNumber}`);
+    console.log(`[OK] Ticket imprimido (${buffer.length} bytes)`);
     res.json({ success: true });
   } catch (err) {
     console.error("[ERROR]", err.message);
