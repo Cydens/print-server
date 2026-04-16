@@ -196,7 +196,7 @@ app.post("/print", (req, res) => {
     p(line());
 
     p(esc.boldOn());
-    p(row("SALDO TOTAL", fmt(Number(ticketInfo.monthInvoices) + orderTotal)));
+    p(row("SALDO TOTAL", fmt(Number(ticketInfo.actualBalance) + orderTotal)));
     p(esc.boldOff());
   }
 
